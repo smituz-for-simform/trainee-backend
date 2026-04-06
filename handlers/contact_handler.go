@@ -2,8 +2,12 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/smituz-for-simform/trainee_backend/config"
 	"github.com/smituz-for-simform/trainee_backend/models"
@@ -13,13 +17,12 @@ import (
 
 var phoneRegex = regexp.MustCompile(`^[0-9]{10}$`)
 
-// ✅ GET all contacts
+// ✅ GET all contacts (WITH IMAGE)
 func GetContacts(c *gin.Context) {
-	rows, err := config.DB.Query(context.Background(), "SELECT id, name, phone FROM contacts")
+	rows, err := config.DB.Query(context.Background(),
+		"SELECT id, name, phone, COALESCE(image_url, '') FROM contacts")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch contacts",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch contacts"})
 		return
 	}
 	defer rows.Close()
@@ -28,10 +31,8 @@ func GetContacts(c *gin.Context) {
 
 	for rows.Next() {
 		var contact models.Contact
-		if err := rows.Scan(&contact.ID, &contact.Name, &contact.Phone); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Error reading data",
-			})
+		if err := rows.Scan(&contact.ID, &contact.Name, &contact.Phone, &contact.ImageURL); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reading data"})
 			return
 		}
 		contacts = append(contacts, contact)
@@ -40,98 +41,92 @@ func GetContacts(c *gin.Context) {
 	c.JSON(http.StatusOK, contacts)
 }
 
-// ✅ CREATE contact
+// ✅ CREATE contact (WITH IMAGE)
 func CreateContact(c *gin.Context) {
-	var contact models.Contact
+	name := c.PostForm("name")
+	phone := c.PostForm("phone")
 
-	if err := c.ShouldBindJSON(&contact); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Name and phone are required",
-		})
+	if name == "" || phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name and phone are required"})
 		return
 	}
 
-	// Validate phone
-	if !phoneRegex.MatchString(contact.Phone) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Phone must be exactly 10 digits",
-		})
+	if !phoneRegex.MatchString(phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Phone must be exactly 10 digits"})
 		return
 	}
 
-	// Check duplicate name
+	// Duplicate check
 	var existingID int
 	err := config.DB.QueryRow(context.Background(),
-		"SELECT id FROM contacts WHERE name=$1", contact.Name).Scan(&existingID)
+		"SELECT id FROM contacts WHERE name=$1", name).Scan(&existingID)
 
 	if err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Contact with this name already exists",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Contact with this name already exists"})
 		return
+	}
+
+	// 🔹 HANDLE IMAGE
+	var imageURL string
+	file, err := c.FormFile("image")
+
+	if err == nil {
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
+		savePath := "./uploads/" + filename
+
+		if err := c.SaveUploadedFile(file, savePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
+			return
+		}
+
+		imageURL = "/uploads/" + filename
 	}
 
 	// Insert
 	_, err = config.DB.Exec(context.Background(),
-		"INSERT INTO contacts (name, phone) VALUES ($1, $2)",
-		contact.Name, contact.Phone)
+		"INSERT INTO contacts (name, phone, image_url) VALUES ($1, $2, $3)",
+		name, phone, imageURL)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create contact",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create contact"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Contact created successfully",
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "Contact created successfully"})
 }
 
-// ✅ UPDATE contact
+// ✅ UPDATE contact (WITH OPTIONAL IMAGE UPDATE)
 func UpdateContact(c *gin.Context) {
-	var contact models.Contact
+	id := c.PostForm("id")
+	name := c.PostForm("name")
+	phone := c.PostForm("phone")
 
-	if err := c.ShouldBindJSON(&contact); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "ID, name and phone are required",
-		})
+	if id == "" || name == "" || phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID, name and phone are required"})
 		return
 	}
 
-	// Validate ID
-	if contact.ID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Valid contact ID is required",
-		})
+	if !phoneRegex.MatchString(phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Phone must be exactly 10 digits"})
 		return
 	}
 
-	// Validate phone
-	if !phoneRegex.MatchString(contact.Phone) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Phone must be exactly 10 digits",
-		})
-		return
-	}
-
-	// Check if contact exists
-	var existingID int
+	// ✅ FIXED: handle NULL safely
+	var existingImage string
 	err := config.DB.QueryRow(context.Background(),
-		"SELECT id FROM contacts WHERE id=$1", contact.ID).Scan(&existingID)
+		"SELECT COALESCE(image_url, '') FROM contacts WHERE id=$1", id).
+		Scan(&existingImage)
 
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Contact not found",
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
 		return
 	}
 
-	// Optional: prevent duplicate name (excluding self)
+	// Duplicate name check
 	var duplicateID int
 	err = config.DB.QueryRow(context.Background(),
-		"SELECT id FROM contacts WHERE name=$1 AND id != $2",
-		contact.Name, contact.ID).Scan(&duplicateID)
+		"SELECT id FROM contacts WHERE name=$1 AND id != $2", name, id).
+		Scan(&duplicateID)
 
 	if err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -140,10 +135,33 @@ func UpdateContact(c *gin.Context) {
 		return
 	}
 
+	imageURL := existingImage
+
+	// 🔹 HANDLE NEW IMAGE (optional)
+	file, err := c.FormFile("image")
+	if err == nil {
+		// delete old image if exists
+		if existingImage != "" {
+			os.Remove("." + existingImage)
+		}
+
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
+		savePath := "./uploads/" + filename
+
+		if err := c.SaveUploadedFile(file, savePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to save image",
+			})
+			return
+		}
+
+		imageURL = "/uploads/" + filename
+	}
+
 	// Update
 	result, err := config.DB.Exec(context.Background(),
-		"UPDATE contacts SET name=$1, phone=$2 WHERE id=$3",
-		contact.Name, contact.Phone, contact.ID)
+		"UPDATE contacts SET name=$1, phone=$2, image_url=$3 WHERE id=$4",
+		name, phone, imageURL, id)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -152,6 +170,7 @@ func UpdateContact(c *gin.Context) {
 		return
 	}
 
+	// ✅ EXTRA SAFETY (good practice)
 	if result.RowsAffected() == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Contact not found",
@@ -164,28 +183,38 @@ func UpdateContact(c *gin.Context) {
 	})
 }
 
-// ✅ DELETE contact
+// ✅ DELETE contact (WITH IMAGE DELETE)
 func DeleteContact(c *gin.Context) {
 	id := c.Param("id")
+
+	var imageURL string
+
+	err := config.DB.QueryRow(context.Background(),
+		"SELECT COALESCE(image_url, '') FROM contacts WHERE id=$1", id).
+		Scan(&imageURL)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
+		return
+	}
 
 	result, err := config.DB.Exec(context.Background(),
 		"DELETE FROM contacts WHERE id=$1", id)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to delete contact",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete contact"})
 		return
 	}
 
 	if result.RowsAffected() == 0 {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Contact not found",
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Contact not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Contact deleted successfully",
-	})
+	// delete image if exists
+	if imageURL != "" {
+		os.Remove("." + imageURL)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Contact deleted successfully"})
 }
