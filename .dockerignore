@@ -1,0 +1,6 @@
+.git
+.gitignore
+.env
+uploads
+Dockerfile
+README.md

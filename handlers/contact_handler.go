@@ -17,6 +17,15 @@ import (
 
 var phoneRegex = regexp.MustCompile(`^[0-9]{10}$`)
 
+func Ready(c *gin.Context) {
+	err := config.DB.Ping(context.Background())
+	if err != nil {
+		c.JSON(500, gin.H{"status": "db not ready"})
+		return
+	}
+	c.JSON(200, gin.H{"status": "ready"})
+}
+
 // ✅ GET all contacts (WITH IMAGE)
 func GetContacts(c *gin.Context) {
 	rows, err := config.DB.Query(context.Background(),

@@ -11,4 +11,8 @@ func SetupRoutes(r *gin.Engine) {
 	r.POST("/add_contact", handlers.CreateContact)
 	r.PUT("/update_contact", handlers.UpdateContact)
 	r.DELETE("/del_contact/:id", handlers.DeleteContact)
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+	r.GET("/ready", handlers.Ready)
 }
