@@ -30,7 +30,6 @@
 # # Run app
 # CMD ["./main"]
 
-# 🔹 Stage 1: Build
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
@@ -42,20 +41,17 @@ COPY . .
 
 RUN go clean -cache && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main .
 
-# 🔹 Stage 2: Run
+# 🔹 Runtime
 FROM alpine:3.19
 
 WORKDIR /app
 
 COPY --from=builder /app/main .
+COPY --from=builder /app/db-init ./db-init
 
-RUN mkdir -p uploads
-
-#for healthcheck and ready db check
-RUN apk add --no-cache wget
+RUN apk add --no-cache ca-certificates wget
 
 RUN adduser -D appuser \
-    && mkdir -p uploads \
     && chown -R appuser:appuser /app
 
 USER appuser

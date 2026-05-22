@@ -6,13 +6,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// func SetupRoutes(r *gin.Engine) {
+// 	r.GET("/get_contacts", handlers.GetContacts)
+// 	r.POST("/add_contact", handlers.CreateContact)
+// 	r.PUT("/update_contact", handlers.UpdateContact)
+// 	r.DELETE("/del_contact/:id", handlers.DeleteContact)
+// 	r.GET("/health", func(c *gin.Context) {
+// 		c.JSON(200, gin.H{"status": "ok"})
+// 	})
+// 	r.GET("/ready", handlers.Ready)
+// }
+
 func SetupRoutes(r *gin.Engine) {
-	r.GET("/get_contacts", handlers.GetContacts)
-	r.POST("/add_contact", handlers.CreateContact)
-	r.PUT("/update_contact", handlers.UpdateContact)
-	r.DELETE("/del_contact/:id", handlers.DeleteContact)
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-	r.GET("/ready", handlers.Ready)
+
+	api := r.Group("/api")
+	{
+		api.GET("/get_contacts", handlers.GetContacts)
+		api.POST("/add_contact", handlers.CreateContact)
+		api.PUT("/update_contact", handlers.UpdateContact)
+		api.DELETE("/del_contact/:id", handlers.DeleteContact)
+
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{"status": "ok"})
+		})
+
+		api.GET("/ready", handlers.Ready)
+	}
 }

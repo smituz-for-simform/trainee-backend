@@ -14,6 +14,6 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 -- 2. Add one dummy user (skips if 'John Doe' already exists)
-INSERT INTO contacts (name, phone)
-VALUES ('John Doe', '1234567890')
-ON CONFLICT (name) DO NOTHING;
+-- INSERT INTO contacts (name, phone)
+-- VALUES ('John Doe', '1234567890')
+-- ON CONFLICT (name) DO NOTHING;
