@@ -54,10 +54,14 @@ func main() {
 	}
 
 	requiredEnvs := []string{
-		"DB_URL",
-		"AZURE_STORAGE_CONNECTION_STRING",
-		"AZURE_STORAGE_CONTAINER",
-	}
+    "DB_HOST",
+    "DB_PORT",
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD",
+   	"AZURE_STORAGE_ACCOUNT_NAME",
+	"AZURE_STORAGE_CONTAINER",
+}
 
 	for _, env := range requiredEnvs {
 		if os.Getenv(env) == "" {
